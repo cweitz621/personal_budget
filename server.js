@@ -8,27 +8,42 @@ const PORT = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
 
-// ATTACH ENVELOPE INFORMATION INTO THE REQUEST BODY
+// FUNCTION TO HANDLE ID ROUTES
 
-app.param('id', (req, res, next, id) => {
-    const envelopeId = Number(id);
+function attachEnvelope(paramName) {
+  return (req, res, next, value) => {
+    const envelopeId = Number(value);
 
     if (isNaN(envelopeId)) {
-        return res.status(400).send('Invalid ID');
+      return res.status(400).send(`Invalid ID for '${paramName}'`);
     }
 
     const index = envelopes.findIndex(env => env.id === envelopeId);
 
     if (index === -1) {
-        return res.status(404).send('Envelope not found');
+      return res.status(404).send(`Envelope not found for '${paramName}'`);
     }
 
-    req.envelopeId = envelopeId;
-    req.index = index;
-    req.envelope = envelopes[index];
-    next();
-});
+    const capitalized = paramName.charAt(0).toUpperCase() + paramName.slice(1);
 
+    req[`${paramName}EnvelopeId`] = envelopeId;
+    req[`${paramName}Index`] = index;
+    req[`${paramName}Envelope`] = envelopes[index];
+
+    if (paramName === 'id') {
+      req.envelopeId = envelopeId;
+      req.index = index;
+      req.envelope = envelopes[index];
+    }
+
+    next();
+  };
+}
+
+// APPLY FUNCTION TO ID, FROM, AND, TO ROUTES
+app.param('id', attachEnvelope('id'));
+app.param('from', attachEnvelope('from'));
+app.param('to', attachEnvelope('to'));
 
 // GET ALL ENVELOPES
 
@@ -104,6 +119,27 @@ app.put('/envelopes/:id', (req, res) => {
     res.status(200).send(req.envelope);
 });
 
+// TRANSFER BALANCE
+
+app.post('/envelopes/:from/:to', (req, res) => {
+    const transferAmount = req.body.amount;
+    if (!isNaN(transferAmount)) {
+        if ((req.fromEnvelope.budget - transferAmount) > 0) {
+            req.fromEnvelope.budget -= transferAmount;
+            req.toEnvelope.budget += transferAmount;
+                res.status(200).send({
+                    from: req.fromEnvelope,
+                    to: req.toEnvelope,
+                    message: 'Transfer successful'
+                    
+                })
+        } else {
+            res.status(400).send('From Envelope insufficient budget')
+        }
+    } else {
+        res.status(400).send('Invalid transfer amount')
+    }
+})
 
 // DELETE BY ID
 
